@@ -58,6 +58,22 @@ python examples/basic_usage.py --debug --trace               # Combine step-thro
 - The `--trace` flag logs all LLM prompts and responses to a file (default: `file.txt`).
 - The `--trace-filename` flag lets you specify a custom trace log file (used with `--trace`).
 - Both flags can be combined.
+
+### Customizing Prompts at Runtime
+
+You can override any prompt template used by the agent at runtime without modifying the source code. This is useful for adapting the agent's behavior, tone, or instructions for different use cases.
+
+Use the `set_prompt_value` function from `gpt_agents.py`:
+
+```python
+from gpt_agents_py.gpt_agents import set_prompt_value
+
+# Example: Change the system instruction prompt
+set_prompt_value('instruction_prompt', 'You are a helpful assistant. Always explain your reasoning.')
+```
+
+See the `Prompts` NamedTuple in `gpt_agents.py` for all available prompt keys you can override.
+
 - By default, both are off and the trace filename is `file.txt`.
 
 ### Running Tests

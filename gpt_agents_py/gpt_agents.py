@@ -9,7 +9,34 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from enum import Enum
-from typing import Callable, List, NamedTuple, NewType, Optional
+from typing import Callable, List, NamedTuple, NewType, Optional, Set
+
+
+class Prompts(NamedTuple):
+    role_playing_template: str
+    tools_template: str
+    no_tools_template: str
+    tool_not_found_prompt: str
+    action_input_not_dict_prompt: str
+    tool_call_failed_prompt: str
+    action_input_parse_failed_prompt: str
+    tool_no_output_prompt: str
+    validation_system_prompt: str
+    validation_user_prompt: str
+    validation_retry_prompt: str
+    instruction_prompt: str
+    current_task_prompt: str
+    context_explanation_prompt: str
+    missing_thought_prompt: str
+    thought_required_prompt: str
+    tool_retry_prompt: str
+    validation_feedback_prompt: str
+    retry_failed_validation_prompt: str
+    coaching_prompt: str
+    force_final_answer_prompt: str
+    retry_failed_validation_prompt_2: str
+    summary_task_description_prompt: str
+
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname).1s%(asctime)s %(filename)s:%(lineno)d] %(message)s", datefmt="%m%d %H:%M:%S")
 
@@ -102,15 +129,15 @@ TOTAL_TOKENS = 0  # Global variable to track total tokens from OpenAI response
 MODEL = "gpt-3.5-turbo"  # OpenAI model to use
 
 # String templates for agent prompts
-ROLE_PLAYING_TEMPLATE = """
+PROMPTS = Prompts(
+    role_playing_template="""
 You are {role}, a highly capable professional with the following background: {backstory}
 
 Your primary goal is: {goal}
 
 Approach each task with strategic thinking, clarity, and professionalism. Leverage your expertise and unique perspective to deliver the best possible outcome. Communicate your reasoning clearly and act with confidence and precision.
-"""
-
-TOOLS_TEMPLATE = """
+""",
+    tools_template="""
 You are an expert at leveraging external tools to solve complex tasks. You should always prefer using the provided tools for any reasoning, calculation, or information retrieval, even if you believe you know the answer. Provided tools are reliable, accurate, and designed to help you achieve the best results.
 
 {tools}
@@ -139,10 +166,8 @@ Thought: I now know the final answer
 Final Answer: <the final answer to the original input question>
 ```
 ---
-"""
-
-
-NO_TOOLS_TEMPLATE = """
+""",
+    no_tools_template="""
 Approach the following task with strategic thinking, clarity, and professionalism. Communicate your reasoning clearly and deliver the best possible outcome based on your expertise and knowledge.
 
 You must use the following format in your response:
@@ -153,7 +178,136 @@ Final Answer: <your complete and most helpful answer to the original input quest
 ---
 
 You MUST use this format exactly—your job depends on it!
-"""
+""",
+    tool_not_found_prompt="""
+Thought: I tried to use the tool '{action}', but it doesn't exist.
+Action: None
+Action Input: {{}}
+Observation: The tool '{action}' is not available. You must use one of the following tools: {tool_list}. Please try again using one of the available tools.
+""",
+    action_input_not_dict_prompt="""
+Thought: I attempted to use the tool '{tool_name}', but the Action Input is not a dictionary.
+Action: {tool_name}
+Action Input: {action_input_str}
+Observation: Action Input must be a JSON dictionary. Please provide a valid JSON dictionary for this tool.
+""",
+    tool_call_failed_prompt="""
+Thought: I attempted to use the tool '{tool_name}' with input {action_input}, but it failed.
+Action: {tool_name}
+Action Input: {action_input_json}
+Observation: Tool call failed. Reason: {exception}. Expected input schema: {tool_inputs}. Please review your tool input and try again.
+""",
+    action_input_parse_failed_prompt="""
+Thought: I attempted to use the tool '{tool_name}', but failed to parse the Action Input.
+Action: {tool_name}
+Action Input: {action_input_str}
+Observation: Failed to parse Action Input as JSON. Error: {exception}. Please provide a valid JSON dictionary for this tool.
+""",
+    tool_no_output_prompt="""
+Thought: I attempted to use the tool '{tool_name}', but it returned no or invalid output.
+Action: {tool_name}
+Action Input: {action_input_json}
+Observation: Tool returned no or invalid output. Please check your input and try again.
+""",
+    validation_system_prompt="""
+You are a careful, critical validator. Your ONLY job is to check whether the output below fulfills the expected description exactly and directly—no assumptions, no extra reasoning.
+
+Respond ONLY with:
+---
+Thought: <short reasoning>
+Final Answer: yes
+---
+OR
+---
+Thought: <short reasoning>
+Final Answer: no
+---
+Do NOT return anything but 'yes' or 'no' as the Final Answer.
+""",
+    validation_user_prompt="""
+Output to check:
+{final_answer}
+
+Expected description:
+{expected_output}
+
+Does the output fulfill the expected description, with no missing or extra information? Think step by step, but reply ONLY with a Final Answer of 'yes' or 'no' as instructed above.
+""",
+    validation_retry_prompt="""
+---
+Thought: I see that my previous answer did not fulfill the task requirements.
+The expected output was: '{expected_output}'.
+My previous answer was: '{final_answer}'.
+Validation agent responded with: '{result_final_answer}'.
+Please try again, making sure to provide an answer that directly matches the expected output.
+---
+""",
+    instruction_prompt="""
+ONLY answer the following task. Do NOT attempt to solve the overall agent goal or reference other tasks.
+""",
+    current_task_prompt="""
+Current Task: {task_description}
+
+Begin! This is VERY important to you, use the tools available and give your best Final Answer, your job depends on it!
+
+Thought:
+""",
+    context_explanation_prompt="""
+You are provided with context from previous steps. Use this context to answer the current task. Do NOT repeat any tool calls or calculations already completed unless explicitly instructed. Summarize, rephrase, or synthesize the context as needed to best answer the current task.
+""",
+    missing_thought_prompt="""
+Please provide a Thought with your Action and Action Input or a Thought with your Final Answer.
+""",
+    thought_required_prompt="""
+Thought is required for this action.
+""",
+    tool_retry_prompt="""
+The previous tool invocation failed with the following error: {exception}. Please try again.
+""",
+    validation_feedback_prompt="""
+IMPORTANT: Your previous answer did NOT pass validation. Please review the expected output and try again.
+
+Expected output: {expected_output}
+Previous answer: {previous_answer}
+Validation result: {validation_result}
+
+Please provide a new answer that directly matches the expected output.
+""",
+    retry_failed_validation_prompt="""
+IMPORTANT: Your previous answer did NOT pass validation.
+Read the feedback below and try again, giving a Final Answer that directly fulfills the expected output.
+{exception}
+""",
+    coaching_prompt="""
+You have only provided a Thought. To proceed, you must now either:
+- Use a tool by specifying an Action and Action Input, or
+- Provide your best possible Final Answer.
+Please do not repeat your previous thought. Continue by taking a concrete action or giving a final answer.
+""",
+    force_final_answer_prompt="""Now it's time you MUST give your absolute best final answer. You'll ignore all previous instructions, stop using any tools, and just return your absolute BEST Final answer.""",
+    retry_failed_validation_prompt_2="""
+IMPORTANT: Your previous answer did NOT pass validation.
+Read the feedback below and try again, giving a Final Answer that directly fulfills the expected output.
+{exception}
+""",
+    summary_task_description_prompt="Use the following information to achieve the agent's goal ({goal})",
+)
+
+
+def set_prompt_value(key: str, new_value: str) -> None:
+    global PROMPTS
+
+    def _extract_placeholders(template: str) -> Set[str]:
+        return set(re.findall(r"\{(\w+)\}", template or ""))
+
+    if not hasattr(PROMPTS, key):
+        raise KeyError(f"PROMPTS has no key '{key}'")
+    old_value = getattr(PROMPTS, key)
+    old_placeholders = _extract_placeholders(old_value)
+    new_placeholders = _extract_placeholders(new_value)
+    if old_placeholders != new_placeholders:
+        raise ValueError(f"Placeholder mismatch for '{key}'. Existing placeholders: {sorted(old_placeholders)}, new placeholders: {sorted(new_placeholders)}")
+    PROMPTS = PROMPTS._replace(**{key: new_value})
 
 
 class MessageType(Enum):
@@ -325,12 +479,7 @@ def tool_executor(action: str, action_input_str: str, tools: list[Tool], s: str)
     tool = next((t for t in tools if t.name == action), None)
     if not tool:
         tool_list = json.dumps([t.name for t in tools])
-        prompt = (
-            f"Thought: I tried to use the tool '{action}', but it doesn't exist.\n"
-            f"Action: None\n"
-            f"Action Input: {{}}\n"
-            f"Observation: The tool '{action}' is not available. You must use one of the following tools: {tool_list}. Please try again using one of the available tools."
-        )
+        prompt = PROMPTS.tool_not_found_prompt.format(action=action, tool_list=tool_list)
         logging.error(prompt)
         raise Exception(prompt)
 
@@ -338,21 +487,11 @@ def tool_executor(action: str, action_input_str: str, tools: list[Tool], s: str)
         action_input = json.loads(action_input_str)
         logging.debug(f"Parsed action_input: {action_input}")
         if not isinstance(action_input, dict):
-            prompt = (
-                f"Thought: I attempted to use the tool '{tool.name}', but the Action Input is not a dictionary.\n"
-                f"Action: {tool.name}\n"
-                f"Action Input: {action_input_str}\n"
-                f"Observation: Action Input must be a JSON dictionary. Please provide a valid JSON dictionary for this tool."
-            )
+            prompt = PROMPTS.action_input_not_dict_prompt.format(tool_name=tool.name, action_input_str=action_input_str)
             logging.error(prompt)
             raise Exception(prompt)
     except Exception as e:
-        prompt = (
-            f"Thought: I attempted to use the tool '{tool.name if tool else action}', but failed to parse the Action Input.\n"
-            f"Action: {tool.name if tool else action}\n"
-            f"Action Input: {action_input_str}\n"
-            f"Observation: Failed to parse Action Input as JSON. Error: {e}. Please provide a valid JSON dictionary for this tool."
-        )
+        prompt = PROMPTS.action_input_parse_failed_prompt.format(tool_name=tool.name if tool else action, action_input_str=action_input_str, exception=e)
         logging.error(prompt)
         raise Exception(prompt)
 
@@ -362,22 +501,14 @@ def tool_executor(action: str, action_input_str: str, tools: list[Tool], s: str)
         logging.debug(f"Tool '{tool.name}' execution result: {result}")
     except Exception as e:
         tool_inputs = getattr(tool, "args_schema", "{}")
-        prompt = (
-            f"Thought: I attempted to use the tool '{tool.name}' with input {action_input}, but it failed.\n"
-            f"Action: {tool.name}\n"
-            f"Action Input: {json.dumps(action_input)}\n"
-            f"Observation: Tool call failed. Reason: {e}. Expected input schema: {tool_inputs}. Please review your tool input and try again."
+        prompt = PROMPTS.tool_call_failed_prompt.format(
+            tool_name=tool.name, action_input=action_input, action_input_json=json.dumps(action_input), exception=e, tool_inputs=tool_inputs
         )
         logging.error(prompt)
         raise Exception(prompt)
 
     if not result:
-        prompt = (
-            f"Thought: I attempted to use the tool '{tool.name}', but it returned no or invalid output.\n"
-            f"Action: {tool.name}\n"
-            f"Action Input: {json.dumps(action_input)}\n"
-            f"Observation: Tool returned no or invalid output. Please check your input and try again."
-        )
+        prompt = PROMPTS.tool_no_output_prompt.format(tool_name=tool.name, action_input_json=json.dumps(action_input))
         logging.error(prompt)
         raise Exception(prompt)
 
@@ -394,15 +525,8 @@ def validation_executor(final_answer: str, task: Task) -> ValidationConclusion:
     Returns ValidationConclusion on success.
     Raises Exception with validation prompt and result if validation fails.
     """
-    system_prompt = (
-        "You are a careful, critical validator. Your ONLY job is to check whether the output below fulfills the expected description exactly and directly—no assumptions, no extra reasoning."
-        "\n\nRespond ONLY with:\n---\nThought: <short reasoning>\nFinal Answer: yes\n---\nOR\n---\nThought: <short reasoning>\nFinal Answer: no\n---\n"
-        "Do NOT return anything but 'yes' or 'no' as the Final Answer."
-    )
-    validation_prompt = (
-        f"Output to check:\n{final_answer}\n\nExpected description:\n{task.expected_output}\n\n"
-        "Does the output fulfill the expected description, with no missing or extra information? Think step by step, but reply ONLY with a Final Answer of 'yes' or 'no' as instructed above."
-    )
+    system_prompt = PROMPTS.validation_system_prompt
+    validation_prompt = PROMPTS.validation_user_prompt.format(final_answer=final_answer, expected_output=task.expected_output)
     val_llm_messages = [
         Message(role=MessageType.SYSTEM, content=system_prompt),
         Message(role=MessageType.USER, content=validation_prompt),
@@ -416,15 +540,7 @@ def validation_executor(final_answer: str, task: Task) -> ValidationConclusion:
     log_json(logging.DEBUG, "Validation finished", {"validation_prompt": validation_prompt, "result_final_answer": result_final_answer, "passed": passed})
     debug_step(f"Validation result for task: {task.name} - {passed}")
     if not passed:
-        retry_prompt = (
-            f"\n---\n"
-            f"Thought: I see that my previous answer did not fulfill the task requirements.\n"
-            f"The expected output was: '{task.expected_output}'.\n"
-            f"My previous answer was: '{final_answer}'.\n"
-            f"Validation agent responded with: '{result_final_answer}'.\n"
-            f"Please try again, making sure to provide an answer that directly matches the expected output.\n"
-            f"---\n"
-        )
+        retry_prompt = PROMPTS.validation_retry_prompt.format(expected_output=task.expected_output, final_answer=final_answer, result_final_answer=result_final_answer)
         log_json(logging.WARNING, "Validation failed:", {"task": task.name, "expected": task.expected_output, "actual": final_answer})
         raise Exception(retry_prompt)
     return ValidationConclusion(input=validation_prompt, output=result_final_answer)
@@ -448,27 +564,21 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
     if tools:
         tool_descriptions = "\n".join(f"- {t.name}: {t.description} (args: {t.args_schema})" for t in tools)
         tool_names = ", ".join(t.name for t in tools)
-        system_content = TOOLS_TEMPLATE.format(tools=tool_descriptions, tool_names=tool_names)
+        system_content = PROMPTS.tools_template.format(tools=tool_descriptions, tool_names=tool_names)
     else:
-        system_content = NO_TOOLS_TEMPLATE
+        system_content = PROMPTS.no_tools_template
 
     # --- Build user prompt with agent persona, task, and prior context ---
-    user_content = ROLE_PLAYING_TEMPLATE.format(role=agent.role, goal=agent.goal, backstory=agent.backstory)
+    user_content = PROMPTS.role_playing_template.format(role=agent.role, goal=agent.goal, backstory=agent.backstory)
     prompt_parts = [user_content]
-    prompt_parts.append("ONLY answer the following task. Do NOT attempt to solve the overall agent goal or reference other tasks.")
+    prompt_parts.append(PROMPTS.instruction_prompt)
     if task_conclusions:
         # Explain how context should be used, encourage synthesis rather than repetition
-        prompt_parts.append(
-            "You are provided with context from previous steps. Use this context to answer the current task. "
-            "Do NOT repeat any tool calls or calculations already completed unless explicitly instructed. "
-            "Summarize, rephrase, or synthesize the context as needed to best answer the current task."
-        )
+        prompt_parts.append(PROMPTS.context_explanation_prompt)
         # Show the context messages as input
         for tc in task_conclusions:
             prompt_parts.append(f"{tc.input}\n{tc.output}\n")
-    prompt_parts.append(
-        f"Current Task: {task.description}\n\n" "Begin! This is VERY important to you, use the tools available and give your best Final Answer, your job depends on it!\n\nThought:"
-    )
+    prompt_parts.append(PROMPTS.current_task_prompt.format(task_description=task.description))
     full_user_prompt = "\n\n".join(prompt_parts)
 
     # Initialize LLM message chain (can be mutated across retries)
@@ -491,7 +601,7 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
             action_match = AGENT_ACTION_REGEX.search(llm_response_text)
             thought_only_match = AGENT_THOUGHT_ONLY_REGEX.search(llm_response_text)
             if not thought_only_match:
-                llm_messages.append(Message(role=MessageType.USER, content="Please provide a Thought with your Action and Action Input or a Thought with your Final Answer."))
+                llm_messages.append(Message(role=MessageType.USER, content=PROMPTS.missing_thought_prompt))
                 continue
             debug_step(f"LLM response parsing: {llm_response_text}\nFinal Match: {final_match}\nAction Match: {action_match}\nThought Only Match: {thought_only_match}")
 
@@ -502,7 +612,7 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
                     "LLM response parsing:",
                     {
                         "attempt": attempt,
-                        # "Thought": action_match.group("thought").strip(),
+                        "Thought": action_match.group("thought").strip(),
                         "Action": action_match.group("action").strip(),
                         "Action Input": action_match.group("action_input").strip(),
                     },
@@ -521,7 +631,7 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
                     llm_messages.append(
                         Message(
                             role=MessageType.USER,
-                            content=f"The previous tool invocation failed with the following error: {str(e)}. Please review the error, correct your tool usage, and try again.",
+                            content=PROMPTS.tool_retry_prompt.format(exception=str(e)),
                         )
                     )
                 continue  # Continue to next LLM round
@@ -546,11 +656,7 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
                         )
                     except Exception as e:
                         # Give feedback to LLM and request a better answer
-                        retry_prompt = (
-                            "\nIMPORTANT: Your previous answer did NOT pass validation. "
-                            "Read the feedback below and try again, giving a Final Answer that directly fulfills the expected output.\n"
-                            f"{str(e)}"
-                        )
+                        retry_prompt = PROMPTS.retry_failed_validation_prompt.format(exception=str(e))
                         llm_messages.append(Message(role=MessageType.USER, content=retry_prompt))
                         llm_response = call_llm(llm_messages)
                         llm_response_text = str(llm_response)
@@ -572,13 +678,7 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
                         "Thought": thought_only_match.group("thought").strip(),
                     },
                 )
-                coaching_prompt = (
-                    "You have only provided a Thought. To proceed, you must now either:\n"
-                    "- Use a tool by specifying an Action and Action Input, or\n"
-                    "- Provide your best possible Final Answer.\n"
-                    "Please do not repeat your previous thought. Continue by taking a concrete action or giving a final answer."
-                )
-                llm_messages.append(Message(role=MessageType.USER, content=coaching_prompt))
+                llm_messages.append(Message(role=MessageType.USER, content=PROMPTS.coaching_prompt))
                 continue
 
         except Exception as e:
@@ -592,7 +692,7 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
             llm_messages.append(
                 Message(
                     role=MessageType.USER,
-                    content="Now it's time you MUST give your absolute best final answer. You'll ignore all previous instructions, stop using any tools, and just return your absolute BEST Final answer.",
+                    content=PROMPTS.force_final_answer_prompt,
                 )
             )
             llm_response = call_llm(llm_messages)
@@ -617,11 +717,7 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
                             output=final_match.group("final_answer").strip(),
                         )
                     except Exception as e:
-                        retry_prompt = (
-                            "\nIMPORTANT: Your previous answer did NOT pass validation. "
-                            "Read the feedback below and try again, giving a Final Answer that directly fulfills the expected output.\n"
-                            f"{str(e)}"
-                        )
+                        retry_prompt = PROMPTS.retry_failed_validation_prompt_2.format(exception=str(e))
                         llm_messages.append(Message(role=MessageType.USER, content=retry_prompt))
                         llm_response = call_llm(llm_messages)
                         llm_response_text = str(llm_response)
@@ -678,7 +774,7 @@ def agent_executor(agent: Agent, agent_conclusions: list[AgentConclusion]) -> Ag
                     raise
     summary = task_executor(
         agent=agent,
-        task=Task(name="Summary", description=f"Use the following information to achieve the agent's goal ({agent.goal})", expected_output=agent.goal),
+        task=Task(name="Summary", description=PROMPTS.summary_task_description_prompt.format(goal=agent.goal), expected_output=agent.goal),
         task_conclusions=task_conclusions,
     )
     return AgentConclusion(agent=agent, input=summary.input, output=summary.output, task_conclusions=task_conclusions)
