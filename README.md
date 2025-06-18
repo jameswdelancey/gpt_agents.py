@@ -1,6 +1,6 @@
 # gpt_agents.py
 
-> **Unique:** This is a single-file, multi-agent framework for LLMs—everything is implemented in one core file with no dependencies for maximum clarity and hackability. See the main implementation here: [`gpt_agents.py`](https://github.com/jamesdelancey/gpt_agents.py/blob/main/gpt_agents_py/gpt_agents.py)
+> **Unique:** This is a single-file, multi-agent framework for LLMs—everything is implemented in one core file with no dependencies for maximum clarity and hackability. See the main implementation here: [`gpt_agents.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/gpt_agents_py/gpt_agents.py)
 
 A minimal, modular Python framework for building and running multi-agent LLM workflows with tool use, validation, and orchestration. 
 
@@ -12,7 +12,7 @@ gpt_agents.py provides abstractions for:
 - **Tool**: A callable function the agent can use, with a name, description, and argument schema.
 - **Organization**: A group of agents working together, passing results between them.
 
-The framework manages LLM prompting, tool execution, validation, and robust control flow to maximize correct answers. See [`tests/test_integration.py`](https://github.com/jamesdelancey/gpt_agents.py/blob/main/tests/test_integration.py) for advanced usage and testing patterns.
+The framework manages LLM prompting, tool execution, validation, and robust control flow to maximize correct answers. See [`tests/test_integration.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/tests/test_integration.py) for advanced usage and testing patterns.
 
 ## Requirements
 - Python 3.11+ (standard library only)
@@ -76,7 +76,7 @@ mypy gpt_agents_py examples tests
 
 ### Continuous Integration
 
-This project uses [GitHub Actions](https://github.com/jamesdelancey/gpt_agents.py/blob/main/.github/workflows/python-app.yml) to automatically lint, type-check, and run tests on pushes and pull requests to `main`, across Python 3.11 and 3.12.
+This project uses [GitHub Actions](https://github.com/jameswdelancey/gpt_agents.py/blob/main/.github/workflows/python-app.yml) to automatically lint, type-check, and run tests on pushes and pull requests to `main`, across Python 3.11 and 3.12.
 
 ### Example: Defining Agents, Tools, and Running an Organization
 
@@ -111,7 +111,7 @@ result = organization_executor(org)
 print(result)
 ```
 
-See [`gpt_agents_py/examples.py`](https://github.com/jamesdelancey/gpt_agents.py/blob/main/gpt_agents_py/examples.py) for a more complete demo.
+See [`gpt_agents_py/examples.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/gpt_agents_py/examples.py) for a more complete demo.
 
 ## Testing
 
@@ -123,7 +123,7 @@ To run all tests:
 python -m unittest discover tests
 ```
 
-See [`tests/test_integration.py`](https://github.com/jamesdelancey/gpt_agents.py/blob/main/tests/test_integration.py) for an example of integration testing with mocked LLM calls.
+See [`tests/test_integration.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/tests/test_integration.py) for an example of integration testing with mocked LLM calls.
 
 ## License
 
