@@ -5,9 +5,6 @@ import os
 import re
 import time
 import traceback
-import urllib.error
-import urllib.parse
-import urllib.request
 from enum import Enum
 from typing import Callable, List, NamedTuple, NewType, Optional, Set
 
@@ -393,64 +390,99 @@ class OrganizationConclusion(NamedTuple):
 LLMResponseText = NewType("LLMResponseText", str)
 
 
-def call_llm(messages: list[Message]) -> LLMResponseText:
+class LLMCallerBase:
+    """
+    Base class for LLM API callers. Prepares, executes, and tracks LLM responses and token usage.
+    Includes retry and error handling logic.
+    """
+
+    def __init__(self) -> None:
+        self._response_text: Optional[LLMResponseText] = None
+        self._tokens_used: Optional[int] = None
+
+    def prepare_llm_response(self, messages: list["Message"], api_key: str = "api_key") -> None:
+        import urllib.error
+        import urllib.request
+
+        url = "https://api.openai.com/v1/chat/completions"
+        model = "gpt-3.5-turbo"
+        payload = {"model": model, "messages": [{"role": m.role.value, "content": m.content} for m in messages]}
+        key = load_api_keys()[api_key]
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
+        log_json(logging.INFO, "LLM Payload:", payload)
+        if DEBUG_MODE:
+            traceback.print_stack()
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        retries = 5
+        for attempt in range(retries):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    resp_data = resp.read().decode("utf-8")
+                    resp_json = json.loads(resp_data)
+                    log_json(logging.DEBUG, "LLM Raw Response:", resp_json)
+                    assert "error" not in resp_json, f"OpenAI API returned error: {resp_json['error']}"
+                    content = resp_json["choices"][0]["message"]["content"]
+                    assert isinstance(content, str), "OpenAI response content is not a string"
+                    total_tokens = resp_json["usage"]["total_tokens"]
+                    assert isinstance(total_tokens, int), "OpenAI response total_tokens is not an int"
+                    self._response_text = LLMResponseText(content)
+                    self._tokens_used = total_tokens
+                    if TRACE_LLM:
+                        try:
+                            with open(TRACE_LLM_FILENAME, "a") as f:
+                                f.write("=== CALL_LLM INPUT ===\n")
+                                for m in messages:
+                                    f.write(f"Role: {m.role.value}\nContent: {m.content}\n")
+                                f.write("=== CALL_LLM OUTPUT ===\n")
+                                f.write(content + "\n\n")
+                        except Exception as log_exc:
+                            logging.error(f"Failed to write LLM mock data: {log_exc}")
+                    return
+            except urllib.error.HTTPError as e:
+                error_content = e.read().decode("utf-8")
+                log_json(logging.DEBUG, "LLM HTTPError raw content:", error_content)
+                try:
+                    error_json = json.loads(error_content)
+                    log_json(logging.ERROR, "LLM HTTPError:", {"status": e.code, "reason": e.reason, "error": error_json})
+                except Exception:
+                    log_json(logging.ERROR, "LLM HTTPError (unparsable JSON):", {"status": e.code, "reason": e.reason, "error": error_content})
+            except TimeoutError as e:
+                log_json(logging.ERROR, "LLM recoverable network error:", {"type": type(e).__name__, "message": str(e)})
+                if attempt < retries - 1:
+                    time.sleep(1)
+                    continue
+                raise Exception(f"Network error after retries: {e}")
+            except Exception as e:
+                log_json(logging.ERROR, "LLM Unexpected error:", {"type": type(e).__name__, "message": str(e)})
+                raise Exception(f"Unexpected error: {e}")
+        raise Exception("LLM API call failed after all retries")
+
+    def get_llm_response(self) -> Optional[LLMResponseText]:
+        return self._response_text
+
+    def get_llm_tokens_used(self) -> Optional[int]:
+        return self._tokens_used
+
+
+_DEFAULT_LLM_CALLER: LLMCallerBase = LLMCallerBase()
+
+
+def set_llm_caller(llm_caller: LLMCallerBase) -> None:
+    global _DEFAULT_LLM_CALLER
+    _DEFAULT_LLM_CALLER = llm_caller
+
+
+def call_llm(messages: list["Message"]) -> LLMResponseText:
     """
     Sends a list of Message objects to a language model (LLM) API and returns the assistant's response content as LLMResponseText (NewType).
-    Raises an Exception if an error occurs, with the error message from the API if available.
+    The transport can be swapped by replacing the global _DEFAULT_LLM_CALLER.
     """
-    url = "https://api.openai.com/v1/chat/completions"
-    api_keys = load_api_keys()
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_keys['api_key']}"}
-    payload = {"model": MODEL, "messages": [{"role": m.role.value, "content": m.content} for m in messages]}
-    log_json(logging.INFO, "LLM Payload:", payload)
-    if DEBUG_MODE:
-        traceback.print_stack()
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    retries = 5
-    for attempt in range(retries):
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                resp_data = resp.read().decode("utf-8")
-                resp_json = json.loads(resp_data)
-                log_json(logging.DEBUG, "LLM Raw Response:", resp_json)
-                assert "error" not in resp_json, f"OpenAI API returned error: {resp_json['error']}"
-                content = resp_json["choices"][0]["message"]["content"]
-                assert isinstance(content, str), "OpenAI response content is not a string"
-                total_tokens = resp_json["usage"]["total_tokens"]
-                assert isinstance(total_tokens, int), "OpenAI response total_tokens is not an int"
-                global TOTAL_TOKENS
-                TOTAL_TOKENS = total_tokens
-                if TRACE_LLM:
-                    try:
-                        with open(TRACE_LLM_FILENAME, "a") as f:
-                            f.write("=== CALL_LLM INPUT ===\n")
-                            for m in messages:
-                                f.write(f"Role: {m.role.value}\nContent: {m.content}\n")
-                            f.write("=== CALL_LLM OUTPUT ===\n")
-                            f.write(content + "\n\n")
-                    except Exception as log_exc:
-                        logging.error(f"Failed to write LLM mock data: {log_exc}")
-                return LLMResponseText(content)
-        except urllib.error.HTTPError as e:
-            error_content = e.read().decode("utf-8")
-            log_json(logging.DEBUG, "LLM HTTPError raw content:", error_content)
-            try:
-                error_json = json.loads(error_content)
-                log_json(logging.ERROR, "LLM HTTPError:", {"status": e.code, "reason": e.reason, "error": error_json})
-            except Exception:
-                log_json(logging.ERROR, "LLM HTTPError (unparsable JSON):", {"status": e.code, "reason": e.reason, "error": error_content})
-        except TimeoutError as e:
-            # This conditional is for handling recoverable network errors (timeouts)
-            log_json(logging.ERROR, "LLM recoverable network error:", {"type": type(e).__name__, "message": str(e)})
-            if attempt < retries - 1:
-                time.sleep(1)
-                continue
-            raise Exception(f"Network error after retries: {e}")
-        except Exception as e:
-            log_json(logging.ERROR, "LLM Unexpected error:", {"type": type(e).__name__, "message": str(e)})
-            raise Exception(f"Unexpected error: {e}")
-    raise Exception("LLM API call failed after all retries")
+    _DEFAULT_LLM_CALLER.prepare_llm_response(messages)
+    resp = _DEFAULT_LLM_CALLER.get_llm_response()
+    if resp is None:
+        raise Exception("No response from LLM API")
+    return LLMResponseText(resp)
 
 
 def load_api_keys() -> dict[str, str]:

@@ -1,5 +1,8 @@
 # gpt_agents.py
 
+**Current Version:** 0.1.4
+
+
 [![PyPI version](https://img.shields.io/pypi/v/gpt-agents-py.svg)](https://pypi.org/project/gpt-agents-py/)
 
 > **Unique:** This is a single-file, multi-agent framework for LLMs—everything is implemented in one core file with no dependencies for maximum clarity and hackability. See the main implementation here: [`gpt_agents.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/gpt_agents_py/gpt_agents.py)
@@ -41,6 +44,32 @@ Or, if using Poetry:
 poetry install --with dev
 ```
 ## Usage
+
+### Customizing LLM API Calls
+
+You can override how LLM API requests are handled by creating your own subclass of `LLMCallerBase` and registering it globally. This makes it easy to integrate with any LLM provider, add logging, or mock responses for testing.
+
+```python
+from gpt_agents_py.gpt_agents import LLMCallerBase, set_llm_caller, call_llm, Message
+
+class MyCustomLLMCaller(LLMCallerBase):
+    def prepare_llm_response(self, messages, api_key="api_key"):
+        # Implement your own LLM API logic here
+        self._response_text = "This is a mock response!"
+        self._tokens_used = 0
+
+# Register your custom LLM caller
+set_llm_caller(MyCustomLLMCaller())
+
+# Now all LLM calls use your logic
+response = call_llm([Message(role="user", content="Hello!")])
+print(response)
+```
+
+### Integrating Other LLM Providers
+
+To use a different LLM backend (such as Azure OpenAI, Anthropic, Cohere, Groq, or a local model), simply implement your `LLMCallerBase` subclass with the API logic for that provider and set it via `set_llm_caller`. This approach gives you full control over request formatting, authentication, and response handling.
+
 
 ### Running the example
 
