@@ -1,0 +1,42 @@
+# gpt_agents_py | James Delancey | MIT License
+# GitHub Actions workflow to run integration tests with unittest
+
+name: Python package
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dev dependencies
+      run: |
+        pip install black mypy isort flake8
+    - name: Run Black (code style)
+      run: |
+        black --check gpt_agents_py examples tests
+    - name: Run isort (import sorting)
+      run: |
+        isort --check gpt_agents_py examples tests
+    - name: Run Flake8 (lint)
+      run: |
+        flake8 gpt_agents_py examples tests
+    - name: Run mypy (type checking)
+      run: |
+        mypy gpt_agents_py examples tests
+    - name: Run integration tests
+      run: |
+        python -m unittest discover tests

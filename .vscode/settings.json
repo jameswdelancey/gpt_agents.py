@@ -1,0 +1,42 @@
+{
+    "editor.formatOnSave": true,
+    "python-lsp-server.plugins.flake8.enabled": true,
+    "python-lsp-server.plugins.flake8.executable": "flake8",
+    "python-lsp-server.plugins.flake8.maxLineLength": 180,
+    "python.defaultInterpreterPath": "poetry run python",
+    "python.formatting.provider": "black",
+    "python.formatting.blackPath": "poetry",
+    "python.formatting.blackArgs": [
+        "run",
+        "black",
+        "--"
+    ],
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "always",
+            "source.fixAll.isort": "always",
+            "source.fixAll.flake8": "always",
+            "source.fixAll.black": "always"
+        }
+    },
+    "python.linting.enabled": true,
+    "python.linting.mypyEnabled": true,
+    "python.linting.mypyPath": "poetry",
+    "python.linting.mypyArgs": [
+        "run",
+        "mypy"
+    ],
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": true,
+    "python.linting.flake8Path": "poetry",
+    "python.linting.flake8Args": [
+        "run",
+        "flake8"
+    ],
+    "isort.args": [
+        "--profile",
+        "black"
+    ]
+}

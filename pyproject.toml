@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "gpt_agents_py"
+version = "0.1.0"
+description = ""
+authors = ["James Delancey <jamesdelanceyjr@gmail.com>"]
+readme = "README.md"
+license = "MIT"
+packages = [
+    { include = "gpt_agents_py" }
+]
+
+[tool.poetry.dependencies]
+python = ">=3.11"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.isort]
+profile = "black"
+
+[tool.black]
+line-length = 180
+
+[tool.poetry.group.dev.dependencies]
+isort = "^6.0.1"
+black = "^25.1.0"
+mypy = "^1.16.0"
+flake8 = "^7.2.0"
