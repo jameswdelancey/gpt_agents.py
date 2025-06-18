@@ -1,6 +1,6 @@
 # gpt_agents.py
 
-> **Unique:** This is a single-file, multi-agent framework for LLMs—everything is implemented in one core file for maximum clarity and hackability. See the main implementation here: [`gpt_agents.py`](gpt_agents_py/gpt_agents.py)
+> **Unique:** This is a single-file, multi-agent framework for LLMs—everything is implemented in one core file with no dependencies for maximum clarity and hackability. See the main implementation here: [`gpt_agents.py`](gpt_agents_py/gpt_agents.py)
 
 A minimal, modular Python framework for building and running multi-agent LLM workflows with tool use, validation, and orchestration. 
 

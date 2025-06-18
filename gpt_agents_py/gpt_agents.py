@@ -245,7 +245,8 @@ def call_llm(messages: list[Message]) -> LLMResponseText:
     Raises an Exception if an error occurs, with the error message from the API if available.
     """
     url = "https://api.openai.com/v1/chat/completions"
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {API_KEYS['api_key']}"}
+    api_keys = load_api_keys()
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_keys['api_key']}"}
     payload = {"model": MODEL, "messages": [{"role": m.role.value, "content": m.content} for m in messages]}
     log_json(logging.INFO, "LLM Payload:", payload)
     if DEBUG_MODE:
@@ -298,11 +299,19 @@ def call_llm(messages: list[Message]) -> LLMResponseText:
     raise Exception("LLM API call failed after all retries")
 
 
-# Load api_keys.json from the project root into a constant
-API_KEYS_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "api_key.json")
-with open(API_KEYS_PATH, "r") as f:
-    API_KEYS = json.load(f)
-log_json(logging.DEBUG, "Loaded API_KEYS:", {k: (v[:6] + "..." if isinstance(v, str) and len(v) > 10 else v) for k, v in API_KEYS.items()})
+def load_api_keys() -> dict[str, str]:
+    """
+    Load API keys from api_key.json at the project root.
+    Returns a dict of keys. Raises FileNotFoundError if missing.
+    Ensures the result is of type dict[str, str] at runtime.
+    """
+    api_keys_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "api_key.json")
+    with open(api_keys_path, "r") as f:
+        api_keys = json.load(f)
+    if not isinstance(api_keys, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in api_keys.items()):
+        raise TypeError("api_key.json must contain a dict[str, str]")
+    log_json(logging.DEBUG, "Loaded API_KEYS:", {k: (v[:6] + "..." if isinstance(v, str) and len(v) > 10 else v) for k, v in api_keys.items()})
+    return api_keys
 
 
 def tool_executor(action: str, action_input_str: str, tools: list[Tool], s: str) -> ToolConclusion:

@@ -6,13 +6,7 @@ import unittest
 from typing import cast
 from unittest.mock import Mock, mock_open, patch
 
-# Patch before importing the module that loads api_key.json
-mock_api_key_content = '{"openai": "sk-test"}'
-patcher = patch("gpt_agents_py.gpt_agents.open", mock_open(read_data=mock_api_key_content))
-patcher.start()
-sys.modules["gpt_agents_py.gpt_agents"].__dict__["open"] = open  # Ensure open is patched in the module namespace
-
-from gpt_agents_py import (  # noqa E402
+from gpt_agents_py import (
     Agent,
     Message,
     Organization,
@@ -21,6 +15,12 @@ from gpt_agents_py import (  # noqa E402
     Tool,
     organization_executor,
 )
+
+# Patch before importing the module that loads api_key.json
+mock_api_key_content = '{"openai": "sk-test"}'
+patcher = patch("gpt_agents_py.gpt_agents.open", mock_open(read_data=mock_api_key_content))
+patcher.start()
+sys.modules["gpt_agents_py.gpt_agents"].__dict__["open"] = open  # Ensure open is patched in the module namespace
 
 
 def population_tool(args: dict[str, str]) -> str:
