@@ -75,14 +75,6 @@ To use a different LLM backend (such as Azure OpenAI, Anthropic, Cohere, Groq, o
 
 Runnable demos are located in the `examples/` directory. To run the basic usage example:
 
-## Contributing
-
-Contributions are welcome! If you have suggestions, bug reports, feature requests, or would like to submit a pull request, please open an issue or PR on GitHub. All contributions—large or small—are appreciated.
-
-### Contributors and Forks
-
-- [gpt_agents.py](https://github.com/jameswdelancey/gpt_agents.py) | [James Delancey](https://github.com/jameswdelancey) Example
-
 
 ```bash
 python examples/basic_usage.py                               # Normal mode
@@ -180,6 +172,15 @@ python -m unittest discover tests
 ```
 
 See [`tests/test_integration.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/tests/test_integration.py) for an example of integration testing with mocked LLM calls.
+
+## Contributing
+
+Contributions are welcome! If you have suggestions, bug reports, feature requests, or would like to submit a pull request, please open an issue or PR on GitHub. All contributions—large or small—are appreciated.
+
+### Contributors and Forks
+
+- [gpt_agents.py](https://github.com/jameswdelancey/gpt_agents.py) | [James Delancey](https://github.com/jameswdelancey) Example
+
 
 ## License
 
