@@ -1,7 +1,8 @@
 # gpt_agents.py
 
-**Current Version:** 0.1.5
+🚨 **Highlight: Now with native Anthropic Claude support!**
 
+**Current Version:** 0.1.5
 
 [![PyPI version](https://img.shields.io/pypi/v/gpt-agents-py.svg)](https://pypi.org/project/gpt-agents-py/)
 
@@ -25,6 +26,11 @@ The framework manages LLM prompting, tool execution, validation, and robust cont
   ```json
   { "openai": "sk-..." }
   ```
+- **(New!) [Anthropic API Key](https://console.anthropic.com/settings/keys) also supported:**
+  ```json
+  { "anthropic": "sk-ant-..." }
+  ```
+  Add both keys to `api_key.json` if you want to use both providers.
 
 ## Installation
 
@@ -70,6 +76,19 @@ print(response)
 
 To use a different LLM backend (such as Azure OpenAI, Anthropic, Cohere, Groq, or a local model), simply implement your `LLMCallerBase` subclass with the API logic for that provider and set it via `set_llm_caller`. This approach gives you full control over request formatting, authentication, and response handling.
 
+
+### Anthropic Claude Integration
+
+Native support for Anthropic Claude models is included! To use Claude, just set the LLM caller to `AnthropicLLMCaller`:
+
+```python
+from gpt_agents_py.extensions.anthropic_llm_caller import AnthropicLLMCaller
+from gpt_agents_py.gpt_agents import set_llm_caller
+
+set_llm_caller(AnthropicLLMCaller())
+```
+
+See `examples/anthropic_basic_usage.py` for a complete working example, including tracing and logging. Make sure your `api_key.json` includes your Anthropic key (see Requirements above).
 
 ### Running the example
 

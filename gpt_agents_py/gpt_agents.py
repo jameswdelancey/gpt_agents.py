@@ -236,13 +236,15 @@ Respond ONLY with:
 ---
 Thought: <short reasoning>
 Final Answer: yes
+
 ---
 OR
 ---
 Thought: <short reasoning>
 Final Answer: no
+
 ---
-Do NOT return anything but 'yes' or 'no' as the Final Answer.
+Do NOT return anything but 'yes' or 'no' as the Final Answer. End with a line break.
 """,
     validation_user_prompt="""
 Output to check:
@@ -589,11 +591,11 @@ def validation_executor(final_answer: str, task: Task) -> ValidationConclusion:
     llm_response = call_llm(val_llm_messages)
     llm_response_text = str(llm_response)
     extracted_answer = extract_final_answer(llm_response_text)
-    result_final_answer = extracted_answer.lower() if extracted_answer is not None else ""
+    result_final_answer = extracted_answer.lower().strip() if extracted_answer is not None else ""
 
     passed = result_final_answer == "yes"
     log_json(logging.DEBUG, "Validation finished", {"validation_prompt": validation_prompt, "result_final_answer": result_final_answer, "passed": passed})
-    debug_step(f"Validation result for task: {task.name} - {passed}")
+    debug_step(f"Validation result for task: {task.name} - {passed} (yes vs {result_final_answer!r})")
     if not passed:
         retry_prompt = PROMPTS.validation_retry_prompt.format(expected_output=task.expected_output, final_answer=final_answer, result_final_answer=result_final_answer)
         log_json(logging.WARNING, "Validation failed:", {"task": task.name, "expected": task.expected_output, "actual": final_answer})
