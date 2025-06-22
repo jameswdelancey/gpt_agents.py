@@ -83,6 +83,27 @@ def set_debug_mode(enabled: bool) -> None:
     DEBUG_MODE = enabled
 
 
+def get_debug_mode() -> bool:
+    """
+    Get the current value of the global DEBUG_MODE flag.
+    """
+    return DEBUG_MODE
+
+
+def get_trace_llm() -> bool:
+    """
+    Get the current value of the global TRACE_LLM flag.
+    """
+    return TRACE_LLM
+
+
+def get_trace_llm_filename() -> str:
+    """
+    Get the current value of the global TRACE_LLM_FILENAME.
+    """
+    return TRACE_LLM_FILENAME
+
+
 def set_trace_mode(enabled: bool, filename: str = "file.txt") -> None:
     """
     Enable or disable LLM trace logging globally for gpt_agents, and set the trace filename.
@@ -90,6 +111,8 @@ def set_trace_mode(enabled: bool, filename: str = "file.txt") -> None:
     global TRACE_LLM, TRACE_LLM_FILENAME
     TRACE_LLM = enabled
     TRACE_LLM_FILENAME = filename
+    if os.path.exists(filename):
+        os.remove(filename)
 
 
 def debug_step(msg: str | None = None) -> None:
@@ -410,8 +433,6 @@ class LLMCallerBase:
         key = load_api_keys()[api_key]
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         log_json(logging.INFO, "LLM Payload:", payload)
-        if DEBUG_MODE:
-            traceback.print_stack()
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
         retries = 5
@@ -428,13 +449,15 @@ class LLMCallerBase:
                     assert isinstance(total_tokens, int), "OpenAI response total_tokens is not an int"
                     self._response_text = LLMResponseText(content)
                     self._tokens_used = total_tokens
-                    if TRACE_LLM:
+                    if get_trace_llm():
                         try:
-                            with open(TRACE_LLM_FILENAME, "a") as f:
-                                f.write("=== CALL_LLM INPUT ===\n")
+                            with open(get_trace_llm_filename(), "a") as f:
+                                f.write("\n\n==================== TRACEBACK ====================\n")
+                                f.write("".join(traceback.format_list(traceback.extract_stack()[-6:-2])) + "\n\n")
+                                f.write("\n==================== CALL_LLM INPUT ====================\n")
                                 for m in messages:
                                     f.write(f"Role: {m.role.value}\nContent: {m.content}\n")
-                                f.write("=== CALL_LLM OUTPUT ===\n")
+                                f.write("\n==================== CALL_LLM OUTPUT ====================\n")
                                 f.write(content + "\n\n")
                         except Exception as log_exc:
                             logging.error(f"Failed to write LLM mock data: {log_exc}")
@@ -804,9 +827,20 @@ def agent_executor(agent: Agent, agent_conclusions: list[AgentConclusion]) -> Ag
                         {"agent": agent.role, "task": task.name, "attempt": attempt + 1, "error": msg},
                     )
                     raise
+    summary_task = Task(
+        name="Summary",
+        description=PROMPTS.summary_task_description_prompt.format(goal=agent.goal),
+        expected_output=agent.goal,
+    )
     summary = task_executor(
-        agent=agent,
-        task=Task(name="Summary", description=PROMPTS.summary_task_description_prompt.format(goal=agent.goal), expected_output=agent.goal),
+        agent=Agent(
+            role="Summary",
+            goal="Summarize the results of the previous tasks and provide a final answer.",
+            backstory="",
+            tasks=[summary_task],
+            tools=[],
+        ),
+        task=summary_task,
         task_conclusions=task_conclusions,
     )
     return AgentConclusion(agent=agent, input=summary.input, output=summary.output, task_conclusions=task_conclusions)
