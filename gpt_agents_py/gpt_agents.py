@@ -352,6 +352,7 @@ class Task(NamedTuple):
     name: str
     description: str
     expected_output: str
+    llm_messages: list[Message]  # Stores LLM messages for this task
     disable_validation: bool = False  # If True, disables validation step for this task
     require_human_input: bool = False  # If True, require human input loop before finishing
 
@@ -607,7 +608,7 @@ def validation_executor(final_answer: str, task: Task) -> ValidationConclusion:
     return ValidationConclusion(input=validation_prompt, output=result_final_answer)
 
 
-def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusion]) -> TaskConclusion:
+def task_executor(task: Task, tools: List[Tool]) -> TaskConclusion:
     """
     Executes a single task for the agent, orchestrating LLM interaction, tool usage, and answer validation.
     The core control flow is:
@@ -620,49 +621,22 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
       4. Raise if no valid answer is obtained after all attempts.
     This layered loop ensures robust handling of tool errors, ambiguous outputs, and stubborn LLM behavior, maximizing the chance of a valid answer.
     """
-    tools = agent.tools
-    # --- Build system prompt with tool information if available ---
-    if tools:
-        tool_descriptions = "\n".join(f"- {t.name}: {t.description} (args: {t.args_schema})" for t in tools)
-        tool_names = ", ".join(t.name for t in tools)
-        system_content = PROMPTS.tools_template.format(tools=tool_descriptions, tool_names=tool_names)
-    else:
-        system_content = PROMPTS.no_tools_template
-
-    # --- Build user prompt with agent persona, task, and prior context ---
-    user_content = PROMPTS.role_playing_template.format(role=agent.role, goal=agent.goal, backstory=agent.backstory)
-    prompt_parts = [user_content]
-    prompt_parts.append(PROMPTS.instruction_prompt)
-    if task_conclusions:
-        # Explain how context should be used, encourage synthesis rather than repetition
-        prompt_parts.append(PROMPTS.context_explanation_prompt)
-        # Show the context messages as input
-        for tc in task_conclusions:
-            prompt_parts.append(f"{tc.input}\n{tc.output}\n")
-    prompt_parts.append(PROMPTS.current_task_prompt.format(task_description=task.description))
-    full_user_prompt = "\n\n".join(prompt_parts)
-
-    # Initialize LLM message chain (can be mutated across retries)
-    llm_messages = [
-        Message(role=MessageType.SYSTEM, content=system_content),
-        Message(role=MessageType.USER, content=full_user_prompt),
-    ]
 
     max_attempts = 5  # Allow several attempts for normal LLM/task interaction
     extra_attempts = 2  # Allow a couple forced attempts if LLM gets stuck
     for attempt in range(max_attempts):
         try:
             # Query LLM
-            llm_response = call_llm(llm_messages)
+            llm_response = call_llm(task.llm_messages)
             llm_response_text = str(llm_response)
-            llm_messages.append(Message(role=MessageType.ASSISTANT, content=llm_response_text.strip()))
+            task.llm_messages.append(Message(role=MessageType.ASSISTANT, content=llm_response_text.strip()))
 
             # --- Parse LLM output ---
             final_match = AGENT_FINAL_REGEX.search(llm_response_text)
             action_match = AGENT_ACTION_REGEX.search(llm_response_text)
             thought_only_match = AGENT_THOUGHT_ONLY_REGEX.search(llm_response_text)
             if not thought_only_match:
-                llm_messages.append(Message(role=MessageType.USER, content=PROMPTS.missing_thought_prompt))
+                task.llm_messages.append(Message(role=MessageType.USER, content=PROMPTS.missing_thought_prompt))
                 continue
             debug_step(f"LLM response parsing: {llm_response_text}\nFinal Match: {final_match}\nAction Match: {action_match}\nThought Only Match: {thought_only_match}")
 
@@ -686,10 +660,10 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
                         llm_response_text,
                     )
                     # Inform LLM of tool outcome as new message
-                    llm_messages.append(Message(role=MessageType.USER, content=f"{tool_conclusion.input}\n{tool_conclusion.output}"))
+                    task.llm_messages.append(Message(role=MessageType.USER, content=f"{tool_conclusion.input}\n{tool_conclusion.output}"))
                 except Exception as e:
                     # Tool failed: prompt LLM to try again
-                    llm_messages.append(
+                    task.llm_messages.append(
                         Message(
                             role=MessageType.USER,
                             content=PROMPTS.tool_retry_prompt.format(exception=str(e)),
@@ -718,10 +692,10 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
                     except Exception as e:
                         # Give feedback to LLM and request a better answer
                         retry_prompt = PROMPTS.retry_failed_validation_prompt.format(exception=str(e))
-                        llm_messages.append(Message(role=MessageType.USER, content=retry_prompt))
-                        llm_response = call_llm(llm_messages)
+                        task.llm_messages.append(Message(role=MessageType.USER, content=retry_prompt))
+                        llm_response = call_llm(task.llm_messages)
                         llm_response_text = str(llm_response)
-                        llm_messages.append(Message(role=MessageType.ASSISTANT, content=llm_response_text.strip()))
+                        task.llm_messages.append(Message(role=MessageType.ASSISTANT, content=llm_response_text.strip()))
                         final_match = AGENT_FINAL_REGEX.search(llm_response_text)
                         if not final_match:
                             raise Exception("Validation failed: No valid final answer. RESET_TASK")
@@ -739,7 +713,7 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
                         "Thought": thought_only_match.group("thought").strip(),
                     },
                 )
-                llm_messages.append(Message(role=MessageType.USER, content=PROMPTS.coaching_prompt))
+                task.llm_messages.append(Message(role=MessageType.USER, content=PROMPTS.coaching_prompt))
                 continue
 
         except Exception as e:
@@ -750,13 +724,13 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
     # --- Fallback: force LLM to answer if all else fails ---
     for force_attempt in range(extra_attempts):
         try:
-            llm_messages.append(
+            task.llm_messages.append(
                 Message(
                     role=MessageType.USER,
                     content=PROMPTS.force_final_answer_prompt,
                 )
             )
-            llm_response = call_llm(llm_messages)
+            llm_response = call_llm(task.llm_messages)
             llm_response_text = str(llm_response)
             final_match = AGENT_FINAL_REGEX.search(llm_response_text)
             if final_match:
@@ -779,10 +753,10 @@ def task_executor(agent: Agent, task: Task, task_conclusions: list[TaskConclusio
                         )
                     except Exception as e:
                         retry_prompt = PROMPTS.retry_failed_validation_prompt_2.format(exception=str(e))
-                        llm_messages.append(Message(role=MessageType.USER, content=retry_prompt))
-                        llm_response = call_llm(llm_messages)
+                        task.llm_messages.append(Message(role=MessageType.USER, content=retry_prompt))
+                        llm_response = call_llm(task.llm_messages)
                         llm_response_text = str(llm_response)
-                        llm_messages.append(Message(role=MessageType.ASSISTANT, content=llm_response_text.strip()))
+                        task.llm_messages.append(Message(role=MessageType.ASSISTANT, content=llm_response_text.strip()))
                         final_match = AGENT_FINAL_REGEX.search(llm_response_text)
                         if not final_match:
                             raise Exception("Validation failed: No valid final answer. RESET_TASK")
@@ -804,16 +778,50 @@ def agent_executor(agent: Agent, agent_conclusions: list[AgentConclusion]) -> Ag
     """
     # Build context from previous agent_conclusions' task_conclusions
     task_conclusions: list[TaskConclusion] = []
+
+    tools = agent.tools
+    # --- Build system prompt with tool information if available ---
+    if tools:
+        tool_descriptions = "\n".join(f"- {t.name}: {t.description} (args: {t.args_schema})" for t in tools)
+        tool_names = ", ".join(t.name for t in tools)
+        system_content = PROMPTS.tools_template.format(tools=tool_descriptions, tool_names=tool_names)
+    else:
+        system_content = PROMPTS.no_tools_template
+
     for ac in agent_conclusions:
         task_conclusions.extend(ac.task_conclusions)
 
     for task in agent.tasks:
         max_retries = 3
         result = None
+
+        if not task.llm_messages:
+            task.llm_messages.append(Message(role=MessageType.SYSTEM, content=system_content))
+
+        # --- Build user prompt with agent persona, task, and prior context ---
+        user_content = PROMPTS.role_playing_template.format(role=agent.role, goal=agent.goal, backstory=agent.backstory)
+        prompt_parts = [user_content]
+        prompt_parts.append(PROMPTS.instruction_prompt)
+        if task_conclusions:
+            # Explain how context should be used, encourage synthesis rather than repetition
+            prompt_parts.append(PROMPTS.context_explanation_prompt)
+            # Show the context messages as input
+            for tc in task_conclusions:
+                prompt_parts.append(f"{tc.input}\n{tc.output}\n")
+        user_content = "\n\n".join(prompt_parts)
+        task.llm_messages.append(Message(role=MessageType.USER, content=user_content))
+        prompt_parts.append(PROMPTS.current_task_prompt.format(task_description=task.description))
+        full_user_prompt = "\n\n".join(prompt_parts)
+
+        task.llm_messages.append(Message(role=MessageType.USER, content=full_user_prompt))
+        task_llm_messages_anchor = task.llm_messages.copy()
         for attempt in range(max_retries):
             try:
                 log_json(logging.DEBUG, "agent_executor.task_attempt", {"agent": agent.role, "task": task.name, "attempt": attempt + 1})
-                result = task_executor(agent=agent, task=task, task_conclusions=task_conclusions)
+                task.llm_messages.clear()
+                task.llm_messages.extend(task_llm_messages_anchor)
+                result = task_executor(task=task, tools=tools)
+
                 task_conclusions.append(result)
                 log_json(logging.DEBUG, "agent_executor.task_result", {"agent": agent.role, "task": task.name, "attempt": attempt + 1, "result": result})
                 break
@@ -839,24 +847,23 @@ def agent_executor(agent: Agent, agent_conclusions: list[AgentConclusion]) -> Ag
         last_task = task_conclusions[-1]
         return AgentConclusion(agent=agent, input=last_task.input, output=last_task.output, task_conclusions=task_conclusions)
     # Otherwise, run summary task as before
+    if not task_conclusions:
+        raise RuntimeError("No task conclusions available to summarize.")
     summary_task = Task(
         name="Summary",
         description=PROMPTS.summary_task_description_prompt.format(goal=agent.goal),
         expected_output=agent.goal,
+        llm_messages=[
+            Message(role=MessageType.SYSTEM, content=PROMPTS.no_tools_template),
+            Message(
+                role=MessageType.USER,
+                content=PROMPTS.role_playing_template.format(
+                    role="Summary", goal="Summarize the results of the previous tasks and provide a final answer.", backstory="\n\n".join(tc.output for tc in task_conclusions)
+                ),
+            ),
+        ],
     )
-    summary = task_executor(
-        agent=Agent(
-            role="Summary",
-            goal="Summarize the results of the previous tasks and provide a final answer.",
-            backstory="",
-            tasks=[summary_task],
-            tools=[],
-            disable_validation=agent.disable_validation,
-            disable_summary=True,
-        ),
-        task=summary_task,
-        task_conclusions=task_conclusions,
-    )
+    summary = task_executor(task=summary_task, tools=[])
     return AgentConclusion(agent=agent, input=summary.input, output=summary.output, task_conclusions=task_conclusions)
 
 
