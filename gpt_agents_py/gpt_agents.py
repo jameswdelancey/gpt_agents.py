@@ -352,6 +352,8 @@ class Task(NamedTuple):
     name: str
     description: str
     expected_output: str
+    disable_validation: bool = False  # If True, disables validation step for this task
+    require_human_input: bool = False  # If True, require human input loop before finishing
 
 
 class Tool(NamedTuple):
@@ -367,6 +369,8 @@ class Agent(NamedTuple):
     backstory: str
     tasks: List[Task]
     tools: List[Tool]
+    disable_validation: bool = False  # If True, disables validation step for this agent
+    disable_summary: bool = False  # If True, disables summary step for this agent
 
 
 class Organization(NamedTuple):
@@ -557,7 +561,7 @@ def tool_executor(action: str, action_input_str: str, tools: list[Tool], s: str)
         result = tool.func(action_input)
         logging.debug(f"Tool '{tool.name}' execution result: {result}")
     except Exception as e:
-        tool_inputs = getattr(tool, "args_schema", "{}")
+        tool_inputs = tool.args_schema
         prompt = PROMPTS.tool_call_failed_prompt.format(
             tool_name=tool.name, action_input=action_input, action_input_json=json.dumps(action_input), exception=e, tool_inputs=tool_inputs
         )
@@ -829,6 +833,12 @@ def agent_executor(agent: Agent, agent_conclusions: list[AgentConclusion]) -> Ag
                         {"agent": agent.role, "task": task.name, "attempt": attempt + 1, "error": msg},
                     )
                     raise
+    # If disable_summary is set, return only the last task's output
+    disable_summary = agent.disable_summary
+    if disable_summary and task_conclusions:
+        last_task = task_conclusions[-1]
+        return AgentConclusion(agent=agent, input=last_task.input, output=last_task.output, task_conclusions=task_conclusions)
+    # Otherwise, run summary task as before
     summary_task = Task(
         name="Summary",
         description=PROMPTS.summary_task_description_prompt.format(goal=agent.goal),
@@ -841,6 +851,8 @@ def agent_executor(agent: Agent, agent_conclusions: list[AgentConclusion]) -> Ag
             backstory="",
             tasks=[summary_task],
             tools=[],
+            disable_validation=agent.disable_validation,
+            disable_summary=True,
         ),
         task=summary_task,
         task_conclusions=task_conclusions,
