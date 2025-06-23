@@ -26,6 +26,7 @@ def main() -> None:
         expected_output="A multi-turn conversation with the human, concluded only when the human requests to end.",
         require_human_input=True,
         disable_validation=True,
+        llm_messages=[],
     )
 
     agent = Agent(
