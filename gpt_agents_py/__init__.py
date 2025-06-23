@@ -1,5 +1,5 @@
 # gpt_agents_py | James Delancey | MIT License
-__version__ = "0.1.10"
+__version__ = "0.1.11"
 __author__ = "James Delancey <jamesdelanceyjr@gmail.com>"
 __license__ = "MIT"
 __description__ = "Minimal, modular Python framework for multi-agent LLM workflows."

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "gpt_agents_py"
-version = "0.1.10"
+version = "0.1.11"
 description = ""
 authors = ["James Delancey <jamesdelanceyjr@gmail.com>"]
 readme = "README.md"
