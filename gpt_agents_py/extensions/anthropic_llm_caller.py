@@ -11,6 +11,7 @@ from gpt_agents_py.gpt_agents import (
     LLMCallerBase,
     LLMResponseText,
     Message,
+    MessageType,
     get_trace_llm,
     get_trace_llm_filename,
     load_api_keys,
@@ -63,9 +64,9 @@ class AnthropicLLMCaller(LLMCallerBase):
         model = "claude-3-7-sonnet-latest"
         # Anthropic expects the first 'system' message as a top-level 'system' field, not in the messages list
         system_prompt = None
-        filtered_messages = []
+        filtered_messages: list[dict[str, str]] = []
         for m in messages:
-            if m.role.value == "system" and system_prompt is None:
+            if m.role is MessageType.SYSTEM and system_prompt is None:
                 system_prompt = m.content
             else:
                 filtered_messages.append({"role": m.role.value, "content": m.content})
@@ -109,7 +110,7 @@ class AnthropicLLMCaller(LLMCallerBase):
                                 f.write("".join(traceback.format_list(traceback.extract_stack()[-6:-2])) + "\n\n")
                                 f.write("\n==================== CALL_LLM INPUT ====================\n")
                                 for m in messages:
-                                    f.write(f"Role: {m.role.value}\nContent: {m.content}\n")
+                                    f.write(f"Role: {m.role}\nContent: {m.content}\n")
                                 f.write("\n==================== CALL_LLM OUTPUT ====================\n")
                                 f.write(content + "\n\n")
                         except Exception as log_exc:

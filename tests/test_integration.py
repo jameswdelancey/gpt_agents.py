@@ -77,7 +77,7 @@ class TestIntegration(unittest.TestCase):
             role="Calculator",
             goal="Return the answer to everything",
             backstory="Knows the answer is always 42.",
-            tasks=[Task(name="Ultimate", description="What is the answer to life, the universe, and everything?", expected_output="42")],
+            tasks=[Task(name="Ultimate", description="What is the answer to life, the universe, and everything?", expected_output="42", llm_messages=[])],
             tools=[
                 Tool(
                     name="population",
@@ -157,7 +157,7 @@ def test_capture_llm_prompts() -> None:
                 role="Test Agent",
                 goal="Test Goal",
                 backstory="Test Backstory",
-                tasks=[Task(description="Test Task", expected_output="Test Output", name="Test Task")],
+                tasks=[Task(description="Test Task", expected_output="Test Output", name="Test Task", llm_messages=[])],
                 tools=[],
             )
         ]
