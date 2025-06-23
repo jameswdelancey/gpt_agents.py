@@ -2,7 +2,7 @@
 
 🚨 **Highlight: Now with native Anthropic Claude support!**
 
-**Current Version:** 0.1.14
+**Current Version:** 0.1.15
 
 [![PyPI version](https://img.shields.io/pypi/v/gpt-agents-py.svg)](https://pypi.org/project/gpt-agents-py/)
 

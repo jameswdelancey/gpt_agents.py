@@ -1,3 +1,4 @@
+from examples.basic_usage import calculator_tools, population_tools
 from gpt_agents_py.gpt_agents import Agent, Task, agent_executor
 
 
@@ -14,30 +15,22 @@ def main() -> None:
     # )
 
     # Task that requires human input
-    human_task = Task(
-        name="ChatWithHuman",
-        description=(
-            "Engage in a helpful, thoughtful conversation with the human user. "
-            "Always begin your response with 'Thought:' to show your reasoning, "
-            "and clearly prefix your actual answer for the human with 'Final Answer:'. "
-            "Carefully consider and address the user's questions below. "
-            "Wait for further human input before ending the conversation."
-        ),
-        expected_output="A multi-turn conversation with the human, concluded only when the human requests to end.",
-        require_human_input=True,
-        disable_validation=True,
-        llm_messages=[],
-    )
-
     agent = Agent(
-        role="Conversational Agent",
-        goal="Provide interactive, friendly, and helpful assistance to the human in real time.",
-        backstory=(
-            "You are an attentive and approachable assistant, skilled at holding interactive conversations. "
-            "Your style is kind, clear, and patient. You always show your reasoning with a 'Thought:' before giving your answer."
-        ),
-        tasks=[human_task],
-        tools=[],
+        role="Population Analyst",
+        goal="Summarize the population difference between France and Germany.",
+        backstory="Expert in demographic analysis.",
+        tasks=[
+            Task(
+                description="Get the population of France.",
+                expected_output="A complete sentence representing France's population.",
+                name="France Population",
+                llm_messages=[],
+                require_human_input=True,
+            ),
+        ],
+        tools=population_tools + calculator_tools,
+        disable_validation=True,
+        disable_summary=True,
     )
 
     result = agent_executor(agent, agent_conclusions=[])

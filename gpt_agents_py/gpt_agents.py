@@ -815,14 +815,14 @@ def agent_executor(agent: Agent, agent_conclusions: list[AgentConclusion]) -> Ag
 
         task.llm_messages.append(Message(role=MessageType.USER, content=full_user_prompt))
         task_llm_messages_anchor = task.llm_messages.copy()
+        # Inline retry logic for initial execution
+        result = None
         for attempt in range(max_retries):
             try:
                 log_json(logging.DEBUG, "agent_executor.task_attempt", {"agent": agent.role, "task": task.name, "attempt": attempt + 1})
                 task.llm_messages.clear()
                 task.llm_messages.extend(task_llm_messages_anchor)
                 result = task_executor(task=task, tools=tools)
-
-                task_conclusions.append(result)
                 log_json(logging.DEBUG, "agent_executor.task_result", {"agent": agent.role, "task": task.name, "attempt": attempt + 1, "result": result})
                 break
             except Exception as e:
@@ -841,6 +841,46 @@ def agent_executor(agent: Agent, agent_conclusions: list[AgentConclusion]) -> Ag
                         {"agent": agent.role, "task": task.name, "attempt": attempt + 1, "error": msg},
                     )
                     raise
+        # Human input loop if required
+        if task.require_human_input:
+            while True:
+                user_input = input(f"\n[Human Input Required for task '{task.name}']\nEnter additional guidance (or 'q' to finish): ")
+                if user_input.strip().lower() == "q":
+                    break
+                # Add user message and re-run task with retries reset
+                task.llm_messages.append(Message(role=MessageType.USER, content=user_input))
+                task_llm_messages_anchor = task.llm_messages.copy()
+                # Retry logic for each human input
+                for attempt in range(max_retries):
+                    try:
+                        log_json(logging.DEBUG, "agent_executor.task_attempt", {"agent": agent.role, "task": task.name, "attempt": attempt + 1, "human_input": True})
+                        task.llm_messages.clear()
+                        task.llm_messages.extend(task_llm_messages_anchor)
+                        result = task_executor(task=task, tools=tools)
+                        log_json(
+                            logging.DEBUG, "agent_executor.task_result", {"agent": agent.role, "task": task.name, "attempt": attempt + 1, "result": result, "human_input": True}
+                        )
+                        break
+                    except Exception as e:
+                        msg = str(e)
+                        if "RESET_TASK" in msg:
+                            log_json(
+                                logging.INFO,
+                                "agent_executor.reset_task",
+                                {"agent": agent.role, "task": task.name, "attempt": attempt + 1, "error": msg, "human_input": True},
+                            )
+                            continue
+                        else:
+                            log_json(
+                                logging.INFO,
+                                "agent_executor.task_exception",
+                                {"agent": agent.role, "task": task.name, "attempt": attempt + 1, "error": msg, "human_input": True},
+                            )
+                            raise
+        if not result:
+            raise RuntimeError("Task failed after retries")
+        task_conclusions.append(result)
+
     # If disable_summary is set, return only the last task's output
     disable_summary = agent.disable_summary
     if disable_summary and task_conclusions:
