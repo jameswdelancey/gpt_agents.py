@@ -1,85 +1,264 @@
 # gpt_agents.py
 
-🚨 **Highlight: Now with native Anthropic Claude support!**
-
-**Current Version:** 0.1.15
+🚨 **Highlight: Native Anthropic Claude support ships in the box!**
 
 [![PyPI version](https://img.shields.io/pypi/v/gpt-agents-py.svg)](https://pypi.org/project/gpt-agents-py/)
 
-> **Unique:** This is a single-file, multi-agent framework for LLMs—everything is implemented in one core file with no dependencies for maximum clarity and hackability. See the main implementation here: [`gpt_agents.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/gpt_agents_py/gpt_agents.py)
+A minimal, hackable Python framework for orchestrating multi-agent LLM workflows with tools, validation, and human-in-the-loop controls—all implemented in a single core module: [`gpt_agents_py/gpt_agents.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/gpt_agents_py/gpt_agents.py).
 
-A minimal, modular Python framework for building and running multi-agent LLM workflows with tool use, validation, and orchestration. 
+## At a Glance
 
-## Project Overview
+- **Single-file core** – every control-flow primitive lives in one file for easy auditing and modification.
+- **Multi-agent orchestration** – compose `Agent` objects into an `Organization` and stream conclusions between them.
+- **Tool-first reasoning** – agents are prompted to rely on registered `Tool` callables for deterministic actions.
+- **Automatic validation** – each task can be auto-validated and retried until success, with optional human input.
+- **Pluggable LLM transport** – swap in any provider by subclassing `LLMCallerBase` (OpenAI by default, Anthropic extension included).
 
-gpt_agents.py provides abstractions for:
-- **Agent**: An LLM-powered entity with a goal, backstory, tasks, and tools.
-- **Task**: A unit of work for an agent, with a description and expected output.
-- **Tool**: A callable function the agent can use, with a name, description, and argument schema.
-- **Organization**: A group of agents working together, passing results between them.
+## Table of Contents
 
-The framework manages LLM prompting, tool execution, validation, and robust control flow to maximize correct answers. See [`tests/test_integration.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/tests/test_integration.py) for advanced usage and testing patterns.
+1. [Quick Start](#quick-start)
+2. [Key Concepts](#key-concepts)
+3. [Architecture](#architecture)
+4. [Execution Flow](#execution-flow)
+5. [Customising Behaviour](#customising-behaviour)
+6. [Anthropic Claude Integration](#anthropic-claude-integration)
+7. [Examples](#examples)
+8. [Development](#development)
+9. [Contributing](#contributing)
+10. [License](#license)
 
-## Requirements
-- Python 3.11+ (standard library only)
-- [OpenAI API Key](https://platform.openai.com/account/api-keys) in `api_key.json` at the project root:
+## Quick Start
+
+### Requirements
+
+- Python **3.11 or newer**
+- `api_key.json` alongside your script or at the project root containing at least one provider key:
+
   ```json
-  { "openai": "sk-..." }
+  {
+    "openai": "sk-your-openai-key",
+    "anthropic": "sk-ant-your-claude-key"
+  }
   ```
-- **(New!) [Anthropic API Key](https://console.anthropic.com/settings/keys) also supported:**
-  ```json
-  { "anthropic": "sk-ant-..." }
-  ```
-  Add both keys to `api_key.json` if you want to use both providers.
 
-## Installation
+  Either key is optional—include the providers you plan to use.
+
+### Installation
+
+You can install the published package or work directly from source (both paths share the same zero-runtime-dependency core).
 
 ```bash
-git clone <repository-url>
+pip install gpt-agents-py
+# or
+git clone https://github.com/jameswdelancey/gpt_agents.py
 cd gpt_agents.py
 ```
 
-No pip or poetry installation required for runtime. This project has **zero runtime dependencies** and uses only the Python standard library.
-
-For development (linting, formatting, type checking, testing), install dev dependencies:
-```bash
-pip install black isort mypy flake8
-```
-Or, if using Poetry:
-```bash
-poetry install --with dev
-```
-## Usage
-
-### Customizing LLM API Calls
-
-You can override how LLM API requests are handled by creating your own subclass of `LLMCallerBase` and registering it globally. This makes it easy to integrate with any LLM provider, add logging, or mock responses for testing.
+### Minimal Usage
 
 ```python
-from gpt_agents_py.gpt_agents import LLMCallerBase, set_llm_caller, call_llm, Message
+from gpt_agents_py.gpt_agents import Agent, Organization, Task, Tool, organization_executor
 
-class MyCustomLLMCaller(LLMCallerBase):
-    def prepare_llm_response(self, messages, api_key="api_key"):
-        # Implement your own LLM API logic here
-        self._response_text = "This is a mock response!"
-        self._tokens_used = 0
 
-# Register your custom LLM caller
-set_llm_caller(MyCustomLLMCaller())
+def population_tool(args: dict[str, str]) -> str:
+    data = {"france": "67000000", "germany": "83000000"}
+    return data.get(args.get("country", "").lower(), "unknown")
 
-# Now all LLM calls use your logic
-response = call_llm([Message(role="user", content="Hello!")])
-print(response)
+
+agent = Agent(
+    role="Researcher",
+    goal="Retrieve France's population",
+    backstory="Demographics expert",
+    tasks=[
+        Task(
+            name="get_population",
+            description="Look up France's population",
+            expected_output="67000000",
+            llm_messages=[],
+        ),
+    ],
+    tools=[
+        Tool(
+            name="PopulationLookup",
+            description="Returns known population figures",
+            args_schema="country:str",
+            func=population_tool,
+        ),
+    ],
+)
+
+org = Organization(agents=[agent])
+print(organization_executor(org))
 ```
 
-### Integrating Other LLM Providers
+## Key Concepts
 
-To use a different LLM backend (such as Azure OpenAI, Anthropic, Cohere, Groq, or a local model), simply implement your `LLMCallerBase` subclass with the API logic for that provider and set it via `set_llm_caller`. This approach gives you full control over request formatting, authentication, and response handling.
+- **`Agent`** – wraps a role, goal, backstory, `Task` list, and tool inventory. Agents optionally skip validation or summaries via flags.
+- **`Task`** – stores the work description, expected output, validation flags, and the full LLM message transcript that powers retries.
+- **`Tool`** – a lightweight adapter around a Python callable. Tools declare a name, description, and argument schema and return stringified observations.
+- **`Organization`** – an ordered collection of agents whose conclusions feed downstream peers.
+- **`LLMCallerBase`** – transport abstraction that prepares HTTP requests, records responses, and exposes token counts. Override it to plug in any provider.
+- **Prompts registry** – the `Prompts` named tuple houses every system/user template used during orchestration and can be adjusted at runtime via `set_prompt_value`.
+
+## Architecture
+
+```mermaid
+classDiagram
+    class Organization {
+        +agents: List~Agent~
+    }
+
+    class Agent {
+        +role: str
+        +goal: str
+        +backstory: str
+        +tasks: List~Task~
+        +tools: List~Tool~
+        +disable_validation: bool
+        +disable_summary: bool
+    }
+
+    class Task {
+        +name: str
+        +description: str
+        +expected_output: str
+        +llm_messages: list~Message~
+        +disable_validation: bool
+        +require_human_input: bool
+    }
+
+    class Tool {
+        +name: str
+        +description: str
+        +args_schema: str
+        +func(args)
+    }
+
+    class Message {
+        +role: MessageType
+        +content: str
+    }
+
+    class AgentConclusion {
+        +agent: Agent
+        +input: str
+        +output: str
+        +task_conclusions: list~TaskConclusion~
+    }
+
+    class TaskConclusion {
+        +input: str
+        +output: str
+    }
+
+    class ToolConclusion {
+        +input: str
+        +output: str
+    }
+
+    class ValidationConclusion {
+        +input: str
+        +output: str
+    }
+
+    class OrganizationConclusion {
+        +final_conclusion: TaskConclusion
+        +agent_conclusions: list~AgentConclusion~
+        +context: list~Message~
+    }
+
+    class LLMCallerBase {
+        +prepare_llm_response(messages, api_key)
+        +get_llm_response()
+        +get_llm_tokens_used()
+    }
+
+    Organization --> Agent
+    Agent --> Task
+    Agent --> Tool
+    Task --> Message
+    AgentConclusion --> TaskConclusion
+    OrganizationConclusion --> AgentConclusion
+    TaskConclusion --> Message
+```
+
+## Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant Client as Caller
+    participant OrgExec as organization_executor
+    participant AgentExec as agent_executor
+    participant TaskExec as task_executor
+    participant LLM as LLMCallerBase
+    participant Tool as Tool.func
+    participant Validator as validation_executor
+
+    Client->>OrgExec: organization_executor(Organization)
+    loop agents
+        OrgExec->>AgentExec: agent_executor(agent, context)
+        loop tasks
+            AgentExec->>TaskExec: task_executor(task, tools)
+            loop reasoning
+                TaskExec->>LLM: call_llm(task.llm_messages)
+                LLM-->>TaskExec: assistant content
+                alt tool requested
+                    TaskExec->>Tool: tool.func(action_input)
+                    Tool-->>TaskExec: observation
+                else final answer proposed
+                    TaskExec->>Validator: validation_executor(final_answer, task)
+                    Validator-->>TaskExec: yes / retry prompt
+                end
+            end
+            TaskExec-->>AgentExec: TaskConclusion
+        end
+        AgentExec-->>OrgExec: AgentConclusion
+    end
+    OrgExec-->>Client: OrganizationConclusion
+```
+
+## Customising Behaviour
+
+### Swap in a Different LLM Provider
+
+Implement a subclass of `LLMCallerBase`, then register it globally:
+
+```python
+from gpt_agents_py.gpt_agents import LLMCallerBase, Message, MessageType, set_llm_caller
 
 
-### Anthropic Claude Integration
+class EchoCaller(LLMCallerBase):
+    def prepare_llm_response(self, messages: list[Message], api_key: str = "openai") -> None:
+        payload = "\n".join(f"{m.role.value}: {m.content}" for m in messages)
+        self._response_text = payload[::-1]
+        self._tokens_used = 0
 
-Native support for Anthropic Claude models is included! To use Claude, just set the LLM caller to `AnthropicLLMCaller`:
+
+set_llm_caller(EchoCaller())
+```
+
+### Enable Debug & Trace Modes
+
+- `set_debug_mode(True)` pauses after every reasoning step until you press Enter.
+- `set_trace_mode(True, "trace.txt")` captures every prompt/response pair to disk for auditing.
+
+### Override Prompts at Runtime
+
+Every template in `PROMPTS` can be swapped while preserving placeholder parity:
+
+```python
+from gpt_agents_py.gpt_agents import set_prompt_value
+
+set_prompt_value("instruction_prompt", "You are a concise assistant. Answer in bullet points.")
+```
+
+### Human-in-the-loop Tasks
+
+Set `require_human_input=True` on a task to pause execution and ask for manual guidance between retries.
+
+## Anthropic Claude Integration
+
+Use the provided extension to route requests to Anthropic's Claude API:
 
 ```python
 from gpt_agents_py.extensions.anthropic_llm_caller import AnthropicLLMCaller
@@ -88,118 +267,48 @@ from gpt_agents_py.gpt_agents import set_llm_caller
 set_llm_caller(AnthropicLLMCaller())
 ```
 
-See `examples/anthropic_basic_usage.py` for a complete working example, including tracing and logging. Make sure your `api_key.json` includes your Anthropic key (see Requirements above).
+See [`examples/anthropic_basic_usage.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/examples/anthropic_basic_usage.py) for a full walk-through, including trace logging.
 
-### Running the example
+## Examples
 
-Runnable demos are located in the `examples/` directory. To run the basic usage example:
-
+Run the sample scripts from the repository root:
 
 ```bash
-python examples/basic_usage.py                               # Normal mode
-python examples/basic_usage.py --debug                       # Step-through debug mode for agent reasoning
-python examples/basic_usage.py --trace                       # Log all LLM prompts and responses to file.txt
-python examples/basic_usage.py --trace --trace-filename mylog.txt   # Log LLM traces to custom file
-python examples/basic_usage.py --debug --trace               # Combine step-through and trace logging
+python examples/basic_usage.py                     # Normal mode
+python examples/basic_usage.py --debug             # Step-through reasoning
+python examples/basic_usage.py --trace             # Persist prompts/responses
+python examples/basic_usage.py --trace --trace-filename mylog.txt
+python examples/basic_usage.py --debug --trace     # Combine both flags
+python examples/anthropic_basic_usage.py           # Claude transport demo
 ```
 
-- The `--debug` flag enables step-through mode, which pauses execution at each agent reasoning step for inspection.
-- The `--trace` flag logs all LLM prompts and responses to a file (default: `file.txt`).
-- The `--trace-filename` flag lets you specify a custom trace log file (used with `--trace`).
-- Both flags can be combined.
+Example outputs are logged with JSON helpers to keep audit trails readable.
 
-### Customizing Prompts at Runtime
+## Development
 
-You can override any prompt template used by the agent at runtime without modifying the source code. This is useful for adapting the agent's behavior, tone, or instructions for different use cases.
+Install dev dependencies via pip or Poetry and run the provided checks:
 
-Use the `set_prompt_value` function from `gpt_agents.py`:
-
-```python
-from gpt_agents_py.gpt_agents import set_prompt_value
-
-# Example: Change the system instruction prompt
-set_prompt_value('instruction_prompt', 'You are a helpful assistant. Always explain your reasoning.')
+```bash
+pip install black isort mypy flake8
+# or
+poetry install --with dev
 ```
 
-See the `Prompts` NamedTuple in `gpt_agents.py` for all available prompt keys you can override.
-
-- By default, both are off and the trace filename is `file.txt`.
-
-### Running Tests
-
-Integration tests are provided using Python's `unittest` framework:
+### Testing & Quality Gates
 
 ```bash
 python -m unittest discover tests
-```
-
-Development checks (run from project root):
-```bash
 black --check gpt_agents_py examples tests
 isort --check gpt_agents_py examples tests
 flake8 gpt_agents_py examples tests
 mypy gpt_agents_py examples tests
 ```
 
-### Continuous Integration
-
-This project uses [GitHub Actions](https://github.com/jameswdelancey/gpt_agents.py/blob/main/.github/workflows/python-app.yml) to automatically lint, type-check, and run tests on pushes and pull requests to `main`, across Python 3.11 and 3.12.
-
-### Example: Defining Agents, Tools, and Running an Organization
-
-```python
-from gpt_agents_py.gpt_agents import Agent, Organization, Task, Tool, organization_executor
-
-def population_tool(args):
-    country = args.get("country")
-    return {"france": 67000000, "germany": 83000000}.get(country.lower(), "unknown")
-
-def calculator_tool(args):
-    op = args["operation"]
-    a, b = float(args["a"]), float(args["b"])
-    if op == "add": return str(a + b)
-    if op == "subtract": return str(a - b)
-    if op == "multiply": return str(a * b)
-    if op == "divide": return str(a / b)
-    return "unknown"
-
-agent = Agent(
-    role="Researcher",
-    goal="Find population and add 1000",
-    backstory="Expert in demographics.",
-    tasks=[Task(name="GetPop", description="Get France's population", expected_output="67000000")],
-    tools=[
-        Tool(name="PopulationTool", description="Returns country population", args_schema="country:str", func=population_tool),
-        Tool(name="Calculator", description="Performs arithmetic", args_schema="operation:str, a:str, b:str", func=calculator_tool)
-    ]
-)
-org = Organization(agents=[agent])
-result = organization_executor(org)
-print(result)
-```
-
-See [`gpt_agents_py/examples.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/gpt_agents_py/examples.py) for a more complete demo.
-
-## Testing
-
-Integration tests are provided in the `tests/` directory. LLM calls are mocked for deterministic testing, and real tool logic is exercised.
-
-To run all tests:
-
-```bash
-python -m unittest discover tests
-```
-
-See [`tests/test_integration.py`](https://github.com/jameswdelancey/gpt_agents.py/blob/main/tests/test_integration.py) for an example of integration testing with mocked LLM calls.
+CI runs the same matrix across Python 3.11–3.12.
 
 ## Contributing
 
-Contributions are welcome! If you have suggestions, bug reports, feature requests, or would like to submit a pull request, please open an issue or PR on GitHub. All contributions—large or small—are appreciated.
-
-### Contributors and Forks
-
-- [gpt_agents.py](https://github.com/jameswdelancey/gpt_agents.py) | [James Delancey](https://github.com/jameswdelancey) Example
-
+Issues and pull requests are welcome! Please include repro steps or example code where possible. For larger contributions, consider opening an issue first so we can coordinate design decisions.
 
 ## License
 
